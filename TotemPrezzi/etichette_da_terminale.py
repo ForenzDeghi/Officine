@@ -8,7 +8,8 @@ from kivy.uix.button import Button
 from kivy.core.image import Image as CoreImage
 import io
 import os
-import pyodbc
+# import pyodbc  # Commentato perché non è più usato
+import requests  # Per le chiamate HTTP all'API
 import configparser
 from PIL import Image as PilImage, ImageDraw, ImageFont
 import ftplib
@@ -18,19 +19,19 @@ from configparser import ConfigParser
 
 Window.size = (480, 640)
 
-# Connessione a SQL Server
-def connectToSql(cfg):
-    config = configparser.ConfigParser()
-    config.read('config.ini')
-    params = config[cfg]
-    try:
-        conn = pyodbc.connect("DRIVER=ODBC Driver 17 for SQL Server;SERVER={0};DATABASE={1};UID={2};PWD={3};".format(
-            params['host'], params['name'], params['user'], params['pass']
-        ))
-        return conn
-    except Exception as e:
-        print(e)
-        exit(1)
+# # Connessione a SQL Server (Commentato)
+# def connectToSql(cfg):
+#     config = configparser.ConfigParser()
+#     config.read('config.ini')
+#     params = config[cfg]
+#     try:
+#         conn = pyodbc.connect("DRIVER=ODBC Driver 17 for SQL Server;SERVER={0};DATABASE={1};UID={2};PWD={3};".format(
+#             params['host'], params['name'], params['user'], params['pass']
+#         ))
+#         return conn
+#     except Exception as e:
+#         print(e)
+#         exit(1)
 
 def filtra_descrizione(descrizione):
     termini_indesiderati = ["FP -", "*80*", "*ASSORTITO*", "*canvaspre*"]  # Sostituisci con i termini effettivi
@@ -73,53 +74,57 @@ class BarcodeApp(App):
             self.status_label.text = "Codice a barre vuoto."
             return
         
-        # Connessione al database
-        conn = connectToSql("RP")
-        cursor = conn.cursor()
-        query = '''SELECT TOP(1)
-                    Articoli.[Codice Articolo] as Codice_Articolo,
-                    Articoli.[Descrizione],
-                    Articoli.[DescrizioneSuDocumenti],
-                    CAST(REPLACE([Prezzi di vendita].[Prezzo], ',', '.') AS FLOAT) * 1.22 * (1 - ISNULL(CAST(REPLACE(ListiniCondizioniSpeciali.ScontoExtra, ',', '.') AS FLOAT), 0) / 100.0) AS Prezzo_Aggiornato,
-                    Barcodes.[Barcode],
-                    Articoli.[CodProduttore],
-                    Articoli.[ID articolo],
-                    CAST(REPLACE(ListiniCondizioniSpeciali.ScontoExtra, ',', '.') AS FLOAT) AS ScontoExtra
-                FROM
-                    Articoli
-                INNER JOIN
-                    [Prezzi di vendita]
-                    ON Articoli.[ID articolo] = [Prezzi di vendita].[ID articolo]
-                INNER JOIN 
-                    Barcodes
-                    ON Barcodes.[ID articolo] = Articoli.[ID articolo]
-                LEFT JOIN
-                    ListiniCondizioniSpeciali
-                    ON Articoli.[ID articolo] = ListiniCondizioniSpeciali.IdArticolo
-                WHERE
-                    [Prezzi di vendita].[ID listino] = 5
-                    AND [Prezzi di vendita].[Prezzo] <> 0
-                    AND Barcodes.[IdTipo] = 0
-                    AND 
-                    (
-                        CAST(Articoli.[Codice Articolo] AS VARCHAR(50)) = ?
-                        OR CAST(Barcodes.[Barcode] AS VARCHAR(50)) = ?
-                    )'''
-        cursor.execute(query, barcode, barcode)
-        result = cursor.fetchone()
-        
-        if result:
-            # Converte result in un dizionario usando il nome delle colonne
-            columns = [column[0] for column in cursor.description]
-            result_dict = dict(zip(columns, result))
-            
-            # Filtra i termini indesiderati dalla descrizione
-            result_dict["DescrizioneSuDocumenti"] = filtra_descrizione(result_dict["DescrizioneSuDocumenti"])
+        # # Connessione al database tramite pyodbc (Commentato)
+        # conn = connectToSql("RP")
+        # cursor = conn.cursor()
+        # query = '''SELECT TOP(1)
+        #             Articoli.[Codice Articolo] as Codice_Articolo,
+        #             Articoli.[Descrizione],
+        #             Articoli.[DescrizioneSuDocumenti],
+        #             CAST(REPLACE([Prezzi di vendita].[Prezzo], ',', '.') AS FLOAT) * 1.22 * (1 - ISNULL(CAST(REPLACE(ListiniCondizioniSpeciali.ScontoExtra, ',', '.') AS FLOAT), 0) / 100.0) AS Prezzo_Aggiornato,
+        #             Barcodes.[Barcode],
+        #             Articoli.[CodProduttore],
+        #             Articoli.[ID articolo],
+        #             CAST(REPLACE(ListiniCondizioniSpeciali.ScontoExtra, ',', '.') AS FLOAT) AS ScontoExtra
+        #         FROM
+        #             Articoli
+        #         INNER JOIN
+        #             [Prezzi di vendita]
+        #             ON Articoli.[ID articolo] = [Prezzi di vendita].[ID articolo]
+        #         INNER JOIN 
+        #             Barcodes
+        #             ON Barcodes.[ID articolo] = Articoli.[ID articolo]
+        #         LEFT JOIN
+        #             ListiniCondizioniSpeciali
+        #             ON Articoli.[ID articolo] = ListiniCondizioniSpeciali.IdArticolo
+        #         WHERE
+        #             [Prezzi di vendita].[ID listino] = 5
+        #             AND [Prezzi di vendita].[Prezzo] <> 0
+        #             AND Barcodes.[IdTipo] = 0
+        #             AND 
+        #             (
+        #                 CAST(Articoli.[Codice Articolo] AS VARCHAR(50)) = ?
+        #                 OR CAST(Barcodes.[Barcode] AS VARCHAR(50)) = ?
+        #             )'''
+        # cursor.execute(query, barcode, barcode)
+        # result = cursor.fetchone()
 
-            self.create_label_image(result_dict)
-            self.status_label.text = "Etichetta creata per codice: {}".format(barcode)
-        else:
-            self.status_label.text = "Nessun dato trovato per il codice: {}".format(barcode)
+        # Nuova logica per ottenere i dati tramite API
+        #api_url = "http://integration.deghisupport.it:5000/api/officine/etichetta_prezzo"  # URL dell'API REST
+        api_url = "http://192.168.1.241:5000/api/officine/etichetta_prezzo"  # URL dell'API REST
+        params = {"barcode": barcode}  # Parametri per l'API
+        try:
+            response = requests.get(api_url, params=params)
+            if response.status_code == 200:
+                result_dict = response.json()
+                result_dict["DescrizioneSuDocumenti"] = filtra_descrizione(result_dict["DescrizioneSuDocumenti"])
+                self.create_label_image(result_dict)
+                self.status_label.text = "Etichetta creata per codice: {}".format(barcode)
+            else:
+                self.status_label.text = "Errore API: codice {}".format(response.status_code)
+        except Exception as e:
+            self.status_label.text = f"Errore di connessione al server"
+            print(f"Errore di connessione API: {e}")
 
     def create_label_image(self, data):
         base_image = PilImage.open("label_template.png")  # Immagine base
