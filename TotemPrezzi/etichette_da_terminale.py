@@ -61,10 +61,25 @@ class BarcodeApp(App):
         # Widget di anteprima immagine molto più grande
         self.preview_image = Image(size_hint=(1, 1.5))
         self.layout.add_widget(self.preview_image)
+
+        # Contatore delle etichette
+        self.label_counter = 0
+        self.counter_label = Label(text=f"Etichette: {self.label_counter}", size_hint=(1, 0.1), halign="right")
+        self.layout.add_widget(self.counter_label)
         
         self.labels = []  # Lista per le etichette generate
         
         return self.layout
+
+    def update_counter(self):
+        #Aggiorna il contatore delle etichette.
+        self.label_counter += 1
+        self.counter_label.text = f"Etichette: {self.label_counter}"
+    
+    def reset_counter(self):
+        #Reimposta il contatore delle etichette.
+        self.label_counter = 0
+        self.counter_label.text = f"Etichette: {self.label_counter}"
 
     def fetch_data(self, instance):
         barcode = self.barcode_input.text.strip()
@@ -178,6 +193,9 @@ class BarcodeApp(App):
         base_image.save(image_path)
         self.labels.append(image_path)  # Aggiungi alla lista delle etichette
 
+        # Aggiorna il contatore delle etichette
+        self.update_counter()
+
         # Mostra l'anteprima
         self.show_preview(base_image)
 
@@ -274,7 +292,12 @@ class BarcodeApp(App):
         self.send_to_ftp(pdf_output)
         
         self.status_label.text = f"Etichette salvate e inviate su FTP come {filename}_{timestamp}.pdf."
+        
+        # Resetta il contatore delle etichette dopo aver stampato
+        self.reset_counter()
+
         self.labels = []  # Resetta la lista delle etichette
+        
 
     def print_labels(self, instance):
         if not self.labels:
@@ -282,6 +305,7 @@ class BarcodeApp(App):
             return
         
         self.show_filename_popup()
+
         # # Percorso di salvataggio del PDF
         # timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         # output_dir = os.path.join(os.getcwd(), "tmp")
