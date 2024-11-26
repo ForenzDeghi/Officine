@@ -6,6 +6,10 @@ from kivy.app import App
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.core.image import Image as CoreImage
+from kivy.uix.popup import Popup
+# from kivy.uix.textinput import TextInput
+# from kivy.uix.boxlayout import BoxLayout
+# from kivy.uix.button import Button
 import io
 import os
 import requests  # Per le chiamate HTTP all'API
@@ -19,7 +23,7 @@ import sys
 Window.size = (480, 640)
 
 def get_asset_path(filename):
-    #Ritorna il path corretto di un file asset.
+    # Ritorna il path corretto di un file asset.
     if hasattr(sys, "_MEIPASS"):
         # Path degli asset quando è in esecuzione l'eseguibile PyInstaller
         return os.path.join(sys._MEIPASS, "assets", filename)
@@ -64,6 +68,7 @@ class BarcodeApp(App):
 
     def fetch_data(self, instance):
         barcode = self.barcode_input.text.strip()
+        self.barcode_input.text = "" # Ripulisce il campo di testo alla pressione del tasto
         if not barcode:
             self.status_label.text = "Codice a barre vuoto."
             return
@@ -96,7 +101,7 @@ class BarcodeApp(App):
         # Caricamento font
         font_large = ImageFont.truetype(get_asset_path("font/Gilroy-Bold.ttf"), 48)  # Font grande per il prezzo
         font_medium = ImageFont.truetype(get_asset_path("font/Gilroy-Medium.ttf"), 18)  # Font medio per descrizione
-        font_small = ImageFont.truetype(get_asset_path("font/Gilroy-Light.ttf"), 12)   # Font piccolo per codice articolo
+        font_small = ImageFont.truetype(get_asset_path("font/Gilroy-Light.ttf"), 15)   # Font piccolo per codice articolo
         font_strikethrough = ImageFont.truetype(get_asset_path("font/Gilroy-Medium.ttf"), 18)  # Font medio barrato per il prezzo intero scontato
         font_discount = ImageFont.truetype(get_asset_path("font/Gilroy-Bold.ttf"), 40)  # Font grande per il prezzo scontato
         
@@ -118,16 +123,24 @@ class BarcodeApp(App):
                 break
         if line and len(lines) < 2:
             lines.append(line)
+
+        # Aggiungi una riga vuota se la descrizione è composta da una sola riga
+        if len(lines) == 1:
+            lines.append(" ")
         
         y_text = 10
         for line in lines:
             draw.text((10, y_text), line, font=font_medium, fill="white")
             y_text += draw.textbbox((0, 0), line, font=font_medium)[3] + 2  # Spaziatura tra le righe
 
+        # Incrementa la distanza tra la descrizione e il codice articolo
+        extra_spacing = 10  # Spazio extra tra descrizione e codice articolo
+        y_text += extra_spacing
+
         # Posizionamento del Codice Articolo più in basso senza "Codice:"
         codice_articolo = data["Codice_Articolo"]
         draw.text((10, y_text), codice_articolo, font=font_small, fill="white")
-        y_text += draw.textbbox((0, 0), codice_articolo, font=font_small)[3] + 10  # Aggiunge spazio per separare dal prezzo
+        y_text += draw.textbbox((0, 0), codice_articolo, font=font_small)[3]  # Aggiunge spazio per separare dal prezzo
 
 
         prezzo_aggiornato = data["Prezzo_Aggiornato"]
@@ -178,15 +191,43 @@ class BarcodeApp(App):
         # Aggiorna il widget dell'immagine di anteprima
         self.preview_image.texture = core_image.texture
 
-    def print_labels(self, instance):
-        if not self.labels:
-            self.status_label.text = "Nessuna etichetta da stampare."
+    def show_filename_popup(self):
+        # Layout del popup
+        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        
+        # Campo di testo per il nome del file
+        filename_input = TextInput(hint_text="Inserisci il nome del file", multiline=False)
+        layout.add_widget(filename_input)
+        
+        # Bottone per confermare
+        confirm_button = Button(text="Conferma", size_hint=(1, 0.2))
+        layout.add_widget(confirm_button)
+        
+        # Popup
+        popup = Popup(title="Nome del file PDF", content=layout, size_hint=(0.8, 0.4))
+        
+        # Evento per il bottone
+        confirm_button.bind(on_press=lambda x: self.on_filename_confirm(popup, filename_input.text))
+        
+        # Mostra il popup
+        popup.open()
+
+    def on_filename_confirm(self, popup, filename):
+        if not filename.strip():
+            self.status_label.text = "Nome del file non può essere vuoto."
             return
         
+        # Chiude il popup
+        popup.dismiss()
+        
+        # Imposta il nome del file
+        self.generate_and_upload_pdf(filename.strip())
+
+    def generate_and_upload_pdf(self, filename):
         # Percorso di salvataggio del PDF
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         output_dir = os.path.join(os.getcwd(), "tmp")
-        pdf_output = os.path.join(os.getcwd(), output_dir, f"labels_output_{timestamp}.pdf")
+        pdf_output = os.path.join(output_dir, f"{filename}_{timestamp}.pdf")
         
         # Crea la cartella se non esiste
         os.makedirs(output_dir, exist_ok=True)
@@ -232,8 +273,66 @@ class BarcodeApp(App):
         # Invio su FTP
         self.send_to_ftp(pdf_output)
         
-        self.status_label.text = "Etichette salvate e inviate su FTP."
+        self.status_label.text = f"Etichette salvate e inviate su FTP come {filename}_{timestamp}.pdf."
         self.labels = []  # Resetta la lista delle etichette
+
+    def print_labels(self, instance):
+        if not self.labels:
+            self.status_label.text = "Nessuna etichetta da stampare."
+            return
+        
+        self.show_filename_popup()
+        # # Percorso di salvataggio del PDF
+        # timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        # output_dir = os.path.join(os.getcwd(), "tmp")
+        # pdf_output = os.path.join(os.getcwd(), output_dir, f"labels_output_{timestamp}.pdf")
+        
+        # # Crea la cartella se non esiste
+        # os.makedirs(output_dir, exist_ok=True)
+        
+        # # Configurazione della pagina e delle etichette
+        # pdf = FPDF(orientation='P', unit='mm', format='A4')
+        # label_width = 60  # Larghezza dell'etichetta in mm
+        # label_height = 40  # Altezza dell'etichetta in mm
+        # margin_x = 10  # Margine sinistro e destro in mm
+        # margin_y = 10  # Margine superiore e inferiore in mm
+        # labels_per_row = 3  # Numero di etichette per riga
+        # page_width = 210  # Larghezza della pagina A4 in mm
+        # page_height = 297  # Altezza della pagina A4 in mm
+
+        # # Coordinate iniziali per la prima etichetta
+        # x = margin_x
+        # y = margin_y
+
+        # # Aggiungi la prima pagina
+        # pdf.add_page()
+
+        # for label_path in self.labels:
+        #     # Aggiungi l'etichetta alla posizione corrente
+        #     pdf.image(label_path, x=x, y=y, w=label_width, h=label_height)
+
+        #     # Aggiorna la posizione x per la prossima etichetta
+        #     x += label_width
+
+        #     # Se abbiamo raggiunto il limite di etichette per riga, resettiamo x e incrementiamo y
+        #     if x + label_width > page_width - margin_x:
+        #         x = margin_x  # Torna all'inizio della riga
+        #         y += label_height  # Passa alla riga successiva
+
+        #     # Se lo spazio verticale si esaurisce, aggiungi una nuova pagina e resetta le coordinate
+        #     if y + label_height > page_height - margin_y:
+        #         pdf.add_page()
+        #         x = margin_x
+        #         y = margin_y
+
+        # # Salva il PDF
+        # pdf.output(pdf_output)
+        
+        # # Invio su FTP
+        # self.send_to_ftp(pdf_output)
+        
+        # self.status_label.text = "Etichette salvate e inviate su FTP."
+        # self.labels = []  # Resetta la lista delle etichette
         
     def send_to_ftp(self, file_path):
 
