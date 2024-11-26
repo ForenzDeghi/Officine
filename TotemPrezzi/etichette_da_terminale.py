@@ -8,30 +8,24 @@ from kivy.uix.button import Button
 from kivy.core.image import Image as CoreImage
 import io
 import os
-# import pyodbc  # Commentato perché non è più usato
 import requests  # Per le chiamate HTTP all'API
-import configparser
 from PIL import Image as PilImage, ImageDraw, ImageFont
 import ftplib
 from fpdf import FPDF
 from datetime import datetime
 from configparser import ConfigParser
+import sys
 
 Window.size = (480, 640)
 
-# # Connessione a SQL Server (Commentato)
-# def connectToSql(cfg):
-#     config = configparser.ConfigParser()
-#     config.read('config.ini')
-#     params = config[cfg]
-#     try:
-#         conn = pyodbc.connect("DRIVER=ODBC Driver 17 for SQL Server;SERVER={0};DATABASE={1};UID={2};PWD={3};".format(
-#             params['host'], params['name'], params['user'], params['pass']
-#         ))
-#         return conn
-#     except Exception as e:
-#         print(e)
-#         exit(1)
+def get_asset_path(filename):
+    #Ritorna il path corretto di un file asset.
+    if hasattr(sys, "_MEIPASS"):
+        # Path degli asset quando è in esecuzione l'eseguibile PyInstaller
+        return os.path.join(sys._MEIPASS, "assets", filename)
+    else:
+        # Path degli asset durante lo sviluppo
+        return os.path.join("assets", filename)
 
 def filtra_descrizione(descrizione):
     termini_indesiderati = ["FP -", "*80*", "*ASSORTITO*", "*canvaspre*"]  # Sostituisci con i termini effettivi
@@ -74,43 +68,7 @@ class BarcodeApp(App):
             self.status_label.text = "Codice a barre vuoto."
             return
         
-        # # Connessione al database tramite pyodbc (Commentato)
-        # conn = connectToSql("RP")
-        # cursor = conn.cursor()
-        # query = '''SELECT TOP(1)
-        #             Articoli.[Codice Articolo] as Codice_Articolo,
-        #             Articoli.[Descrizione],
-        #             Articoli.[DescrizioneSuDocumenti],
-        #             CAST(REPLACE([Prezzi di vendita].[Prezzo], ',', '.') AS FLOAT) * 1.22 * (1 - ISNULL(CAST(REPLACE(ListiniCondizioniSpeciali.ScontoExtra, ',', '.') AS FLOAT), 0) / 100.0) AS Prezzo_Aggiornato,
-        #             Barcodes.[Barcode],
-        #             Articoli.[CodProduttore],
-        #             Articoli.[ID articolo],
-        #             CAST(REPLACE(ListiniCondizioniSpeciali.ScontoExtra, ',', '.') AS FLOAT) AS ScontoExtra
-        #         FROM
-        #             Articoli
-        #         INNER JOIN
-        #             [Prezzi di vendita]
-        #             ON Articoli.[ID articolo] = [Prezzi di vendita].[ID articolo]
-        #         INNER JOIN 
-        #             Barcodes
-        #             ON Barcodes.[ID articolo] = Articoli.[ID articolo]
-        #         LEFT JOIN
-        #             ListiniCondizioniSpeciali
-        #             ON Articoli.[ID articolo] = ListiniCondizioniSpeciali.IdArticolo
-        #         WHERE
-        #             [Prezzi di vendita].[ID listino] = 5
-        #             AND [Prezzi di vendita].[Prezzo] <> 0
-        #             AND Barcodes.[IdTipo] = 0
-        #             AND 
-        #             (
-        #                 CAST(Articoli.[Codice Articolo] AS VARCHAR(50)) = ?
-        #                 OR CAST(Barcodes.[Barcode] AS VARCHAR(50)) = ?
-        #             )'''
-        # cursor.execute(query, barcode, barcode)
-        # result = cursor.fetchone()
-
         # Nuova logica per ottenere i dati tramite API
-        #api_url = "http://integration.deghisupport.it:5000/api/officine/etichetta_prezzo"  # URL dell'API REST
         api_url = "http://192.168.1.241:5000/api/officine/etichetta_prezzo"  # URL dell'API REST
         params = {"barcode": barcode}  # Parametri per l'API
         try:
@@ -123,23 +81,24 @@ class BarcodeApp(App):
             else:
                 self.status_label.text = "Errore API: codice {}".format(response.status_code)
         except Exception as e:
-            self.status_label.text = f"Errore di connessione al server"
+            self.status_label.text = f"Errore: {e.args[0]}" if e.args else "Errore sconosciuto"
             print(f"Errore di connessione API: {e}")
 
     def create_label_image(self, data):
-        base_image = PilImage.open("label_template.png")  # Immagine base
+        base_image_path = get_asset_path("label_template.png")
+        base_image = PilImage.open(base_image_path) # Immagine base
         draw = ImageDraw.Draw(base_image)
 
         # Crea una directory temporanea se non esiste
-        temp_dir = "tmp_labels"
+        temp_dir = os.path.join(os.getcwd(), "tmp_labels")
         os.makedirs(temp_dir, exist_ok=True)
         
         # Caricamento font
-        font_large = ImageFont.truetype("font\\Gilroy-Bold.ttf", 48)  # Font grande per il prezzo
-        font_medium = ImageFont.truetype("font\\Gilroy-Medium.ttf", 18)  # Font medio per descrizione
-        font_small = ImageFont.truetype("font\\Gilroy-Light.ttf", 12)   # Font piccolo per codice articolo
-        font_strikethrough = ImageFont.truetype("font\\Gilroy-Medium.ttf", 18)  # Font medio barrato per il prezzo intero scontato
-        font_discount = ImageFont.truetype("font\\Gilroy-Bold.ttf", 40)  # Font grande per il prezzo scontato
+        font_large = ImageFont.truetype(get_asset_path("font/Gilroy-Bold.ttf"), 48)  # Font grande per il prezzo
+        font_medium = ImageFont.truetype(get_asset_path("font/Gilroy-Medium.ttf"), 18)  # Font medio per descrizione
+        font_small = ImageFont.truetype(get_asset_path("font/Gilroy-Light.ttf"), 12)   # Font piccolo per codice articolo
+        font_strikethrough = ImageFont.truetype(get_asset_path("font/Gilroy-Medium.ttf"), 18)  # Font medio barrato per il prezzo intero scontato
+        font_discount = ImageFont.truetype(get_asset_path("font/Gilroy-Bold.ttf"), 40)  # Font grande per il prezzo scontato
         
         # Posizionamento della Descrizione in alto a sinistra (max 2 righe)
         descrizione = data["DescrizioneSuDocumenti"]
@@ -226,8 +185,8 @@ class BarcodeApp(App):
         
         # Percorso di salvataggio del PDF
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        output_dir = "tmp"
-        pdf_output = os.path.join(output_dir, "labels_output_{}.pdf".format(timestamp))
+        output_dir = os.path.join(os.getcwd(), "tmp")
+        pdf_output = os.path.join(os.getcwd(), output_dir, f"labels_output_{timestamp}.pdf")
         
         # Crea la cartella se non esiste
         os.makedirs(output_dir, exist_ok=True)
@@ -279,7 +238,7 @@ class BarcodeApp(App):
     def send_to_ftp(self, file_path):
 
         config = ConfigParser()
-        config_file = 'config.ini'
+        config_file = get_asset_path('config.ini')
         config.read(config_file)
 
         ftp_config = {
@@ -305,7 +264,3 @@ class BarcodeApp(App):
             # Caricamento del file nella directory FTP finale
             with open(file_path, "rb") as file:
                 ftp.storbinary(f"STOR {os.path.basename(file_path)}", file)
-
-
-if __name__ == "__main__":
-    BarcodeApp().run()
