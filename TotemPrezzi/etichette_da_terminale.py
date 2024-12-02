@@ -20,7 +20,7 @@ from datetime import datetime
 from configparser import ConfigParser
 import sys
 
-Window.size = (480, 640)
+#Window.size = (480, 640)
 
 def get_asset_path(filename):
     # Ritorna il path corretto di un file asset.
@@ -39,7 +39,7 @@ def filtra_descrizione(descrizione):
 
 class BarcodeApp(App):
     def build(self):
-        self.layout = BoxLayout(orientation='vertical', padding=10)
+        self.layout = BoxLayout(orientation='vertical', padding=10, spacing=5)
         
         # Input per codice a barre
         self.barcode_input = TextInput(hint_text="Scansiona o inserisci il codice", multiline=False)
@@ -47,12 +47,22 @@ class BarcodeApp(App):
         self.layout.add_widget(self.barcode_input)
         
         # Bottone di scansione
+        #self.scan_button = Button(text="Scansiona", size_hint=(1, None), font_size=18, height=60)
+        #self.scan_button = Button(text="Scansiona", size_hint=(1, 0.15))
         self.scan_button = Button(text="Scansiona", on_press=self.fetch_data)
         self.layout.add_widget(self.scan_button)
         
         # Bottone di stampa etichette
+        #self.print_button = Button(text="Stampa Etichette", size_hint=(1, None), font_size=18, height=60)
+        #self.print_button = Button(text="Stampa Etichette", size_hint=(1, 0.15))
         self.print_button = Button(text="Stampa Etichette", on_press=self.print_labels)
         self.layout.add_widget(self.print_button)
+
+        # Bottone per annullare le etichette
+        #self.cancel_button = Button(text="Annulla etichette", size_hint=(1, None), font_size=14, height=40)
+        #self.cancel_button = Button(text="Annulla etichette", size_hint=(1, 0.08))
+        self.cancel_button = Button(text="Annulla Lista", on_press=self.cancel_labels)
+        self.layout.add_widget(self.cancel_button)
         
         # Etichetta di stato, posizionata molto in alto
         self.status_label = Label(text="", size_hint=(1, 0.1))
@@ -70,6 +80,12 @@ class BarcodeApp(App):
         self.labels = []  # Lista per le etichette generate
         
         return self.layout
+
+    def cancel_labels(self, instance):
+        #Resetta tutte le etichette non ancora inviate e aggiorna lo stato.
+        self.labels = []  # Resetta la lista delle etichette
+        self.reset_counter()  # Resetta il contatore delle etichette
+        self.status_label.text = "Tutte le etichette annullate."
 
     def update_counter(self):
         #Aggiorna il contatore delle etichette.
@@ -254,8 +270,8 @@ class BarcodeApp(App):
         pdf = FPDF(orientation='P', unit='mm', format='A4')
         label_width = 60  # Larghezza dell'etichetta in mm
         label_height = 40  # Altezza dell'etichetta in mm
-        margin_x = 10  # Margine sinistro e destro in mm
-        margin_y = 10  # Margine superiore e inferiore in mm
+        margin_x = 15  # Margine sinistro e destro in mm
+        margin_y = 8  # Margine superiore e inferiore in mm
         labels_per_row = 3  # Numero di etichette per riga
         page_width = 210  # Larghezza della pagina A4 in mm
         page_height = 297  # Altezza della pagina A4 in mm
@@ -266,6 +282,8 @@ class BarcodeApp(App):
 
         # Aggiungi la prima pagina
         pdf.add_page()
+
+        indice_ciclo_etichette = 1
 
         for label_path in self.labels:
             # Aggiungi l'etichetta alla posizione corrente
@@ -279,11 +297,14 @@ class BarcodeApp(App):
                 x = margin_x  # Torna all'inizio della riga
                 y += label_height  # Passa alla riga successiva
 
-            # Se lo spazio verticale si esaurisce, aggiungi una nuova pagina e resetta le coordinate
-            if y + label_height > page_height - margin_y:
-                pdf.add_page()
-                x = margin_x
-                y = margin_y
+            
+            if indice_ciclo_etichette != self.label_counter:
+                indice_ciclo_etichette += 1
+                # Se lo spazio verticale si esaurisce, aggiungi una nuova pagina e resetta le coordinate
+                if y + label_height > page_height - margin_y:
+                    pdf.add_page()
+                    x = margin_x
+                    y = margin_y
 
         # Salva il PDF
         pdf.output(pdf_output)
