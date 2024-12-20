@@ -1,4 +1,3 @@
-from kivy.core.window import Window
 from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.uix.boxlayout import BoxLayout
@@ -7,9 +6,6 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.core.image import Image as CoreImage
 from kivy.uix.popup import Popup
-# from kivy.uix.textinput import TextInput
-# from kivy.uix.boxlayout import BoxLayout
-# from kivy.uix.button import Button
 import io
 import os
 import requests  # Per le chiamate HTTP all'API
@@ -19,6 +15,19 @@ from fpdf import FPDF
 from datetime import datetime
 from configparser import ConfigParser
 import sys
+from io import BytesIO
+#
+#
+# Commentati perchè spaccano apk su mobile
+#
+#
+#
+# from reportlab.graphics.barcode import code128
+# from reportlab.pdfgen import canvas
+# from reportlab.graphics import renderPM
+# from kivy.uix.widget import Widget
+# from barcode import Code128
+# from barcode.writer import ImageWriter
 
 #Window.size = (480, 640)
 
@@ -37,7 +46,14 @@ def filtra_descrizione(descrizione):
         descrizione = descrizione.replace(termine, "")
     return descrizione
 
+
+
+
+
+
+
 class BarcodeApp(App):
+
     def build(self):
         self.layout = BoxLayout(orientation='vertical', padding=10, spacing=5)
         
@@ -120,15 +136,25 @@ class BarcodeApp(App):
             self.status_label.text = f"Errore: {e.args[0]}" if e.args else "Errore sconosciuto"
             print(f"Errore di connessione API: {e}")
 
+
+    
+
+
+
     def create_label_image(self, data):
         base_image_path = get_asset_path("label_template.png")
         base_image = PilImage.open(base_image_path) # Immagine base
         draw = ImageDraw.Draw(base_image)
 
-        # Crea una directory temporanea se non esiste
-        temp_dir = os.path.join(os.getcwd(), "tmp_labels")
-        os.makedirs(temp_dir, exist_ok=True)
-        
+        # Crea una directory temporanea se non esiste --------> Originale
+        # temp_dir = os.path.join(os.getcwd(), "tmp_labels")
+        # os.makedirs(temp_dir, exist_ok=True)
+
+        # **MODIFICA**: Usa un percorso compatibile con Android, altrimenti rispetta quello di sistema
+        temp_dir = os.path.join(os.environ.get('ANDROID_PRIVATE', os.getcwd()), "tmp_labels")
+        os.makedirs(temp_dir, exist_ok=True)  # Crea la directory temporanea se non esiste
+        print(f"Percorso temporaneo: {temp_dir}")  # Log per debug
+            
         # Caricamento font
         font_large = ImageFont.truetype(get_asset_path("font/Gilroy-Bold.ttf"), 48)  # Font grande per il prezzo
         font_medium = ImageFont.truetype(get_asset_path("font/Gilroy-Medium.ttf"), 18)  # Font medio per descrizione
@@ -136,6 +162,74 @@ class BarcodeApp(App):
         font_strikethrough = ImageFont.truetype(get_asset_path("font/Gilroy-Medium.ttf"), 18)  # Font medio barrato per il prezzo intero scontato
         font_discount = ImageFont.truetype(get_asset_path("font/Gilroy-Bold.ttf"), 40)  # Font grande per il prezzo scontato
         
+       
+        # Inizio blocco per generazione barcode
+        codice_articolo = data["Codice_Articolo"]
+
+        # Chiamata API per generare barcode Code-128
+        api_url = f"http://192.168.1.182:5000/generate_barcode?barcode={codice_articolo}"
+
+
+
+        try:
+            # Richiesta all'API per ottenere l'immagine del barcode
+            response = requests.get(api_url)
+            if response.status_code == 200:
+                # Carica l'immagine del barcode direttamente dal contenuto della risposta
+                barcode_image = PilImage.open(BytesIO(response.content))
+                print(f"Barcode dimensioni originali: {barcode_image.size}")  # **Log per debug**
+
+                # Calcola l'area da ritagliare (eliminando il testo nella parte inferiore)
+                original_width, original_height = barcode_image.size
+                crop_height = int(original_height * 0.74)  # Mantieni solo il 75% superiore dell'immagine
+                barcode_image = barcode_image.crop((0, 0, original_width, crop_height))
+
+                # Dimensioni personalizzate per il barcode
+                custom_barcode_width = 239  # Larghezza del barcode
+                custom_barcode_height = 38  # Altezza del barcode
+                barcode_image = barcode_image.resize((custom_barcode_width, custom_barcode_height), PilImage.LANCZOS)
+                print(f"Dimensioni barcode ritagliato: {barcode_image.size}")  # **Log per debug**
+
+                # **MODIFICA**: Salva temporaneamente il barcode
+                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                barcode_path = os.path.join(temp_dir, f"barcode_{timestamp}.png")
+                barcode_image.save(barcode_path)
+                print(f"Barcode salvato temporaneamente in: {barcode_path}")  # **Log per debug**
+
+                # Padding personalizzato per ogni lato
+                padding_top = 2       # Margine superiore
+                padding_right = 2    # Margine destro
+                padding_bottom = 2  # Margine inferiore (maggiore)
+                padding_left = 2      # Margine sinistro
+
+                white_bg_width = custom_barcode_width + padding_left + padding_right
+                white_bg_height = custom_barcode_height + padding_top + padding_bottom
+
+                # Calcola la posizione per centrare il rettangolo bianco in basso
+                barcode_x = (base_image.width - white_bg_width) // 2
+                barcode_y = base_image.height - white_bg_height - 8
+
+                # Disegna il rettangolo bianco come sfondo
+                draw = ImageDraw.Draw(base_image)
+                draw.rectangle(
+                    [barcode_x, barcode_y, barcode_x + white_bg_width, barcode_y + white_bg_height],
+                    fill="white"  # Colore dello sfondo bianco
+                )
+
+                # Posiziona il barcode all'interno del rettangolo bianco con padding personalizzato
+                barcode_x_inner = barcode_x + padding_left
+                barcode_y_inner = barcode_y + padding_top
+                base_image.paste(barcode_image, (barcode_x_inner, barcode_y_inner))
+
+            else:
+                print(f"Errore API: {response.status_code}, {response.text}")  # **Log per debug**
+        except Exception as e:
+            print(f"Errore durante la generazione del barcode: {e}")  # **Log per debug**
+        # Fine blocco per generazione barcode
+
+
+
+
         # Posizionamento della Descrizione in alto a sinistra (max 2 righe)
         descrizione = data["DescrizioneSuDocumenti"]
         max_width = 239  # Larghezza massima per riga
@@ -203,11 +297,18 @@ class BarcodeApp(App):
             bbox = draw.textbbox((0, 0), text_price, font=font_large)
             draw.text((base_image.width - bbox[2] - 10, base_image.height - bbox[3] - y_text), text_price, font=font_large, fill="white")
 
-        # Salva l’immagine nel percorso temporaneo
+        # Salva l’immagine nel percorso temporaneo -------> Originale
+        # timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        # image_path = os.path.join(temp_dir, "label_{}_{}.png".format(data["Barcode"], timestamp))
+        # base_image.save(image_path)
+        # self.labels.append(image_path)  # Aggiungi alla lista delle etichette
+
+        # **MODIFICA**: Salva il template aggiornato nel percorso temporaneo
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        image_path = os.path.join(temp_dir, "label_{}_{}.png".format(data["Barcode"], timestamp))
+        image_path = os.path.join(temp_dir, f"label_{data['Barcode']}_{timestamp}.png")
         base_image.save(image_path)
-        self.labels.append(image_path)  # Aggiungi alla lista delle etichette
+        print(f"Etichetta salvata in: {image_path}")  # **Log per debug**
+        self.labels.append(image_path)
 
         # Aggiorna il contatore delle etichette
         self.update_counter()
