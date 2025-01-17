@@ -159,8 +159,8 @@ class BarcodeApp(App):
         font_large = ImageFont.truetype(get_asset_path("font/Gilroy-Bold.ttf"), 48)  # Font grande per il prezzo
         font_medium = ImageFont.truetype(get_asset_path("font/Gilroy-Medium.ttf"), 18)  # Font medio per descrizione
         font_small = ImageFont.truetype(get_asset_path("font/Gilroy-Light.ttf"), 15)   # Font piccolo per codice articolo
-        font_strikethrough = ImageFont.truetype(get_asset_path("font/Gilroy-Medium.ttf"), 18)  # Font medio barrato per il prezzo intero scontato
-        font_discount = ImageFont.truetype(get_asset_path("font/Gilroy-Bold.ttf"), 40)  # Font grande per il prezzo scontato
+        font_strikethrough = ImageFont.truetype(get_asset_path("font/Gilroy-Medium.ttf"), 24)  # Font medio barrato per il prezzo intero scontato
+        font_discount = ImageFont.truetype(get_asset_path("font/Gilroy-Bold.ttf"), 36)  # Font grande per il prezzo scontato
         
        
         # Inizio blocco per generazione barcode
@@ -270,6 +270,7 @@ class BarcodeApp(App):
 
         prezzo_aggiornato = data["Prezzo_Aggiornato"]
         sconto_extra = data["ScontoExtra"]
+        sconto_percentuale = f"-{int(sconto_extra)}%" if sconto_extra else ""  # Sconto percentuale se presente
         prezzo_originale = prezzo_aggiornato / (1 - sconto_extra / 100) if sconto_extra else prezzo_aggiornato
         text_price = f"€ {prezzo_aggiornato:.2f}".replace('.', ',')
 
@@ -283,15 +284,27 @@ class BarcodeApp(App):
             y_price = base_image.height - y_text - bbox_original[3] - 30
 
             # Disegna il prezzo originale barrato
-            draw.text((x_right, y_price), text_original_price, font=font_strikethrough, fill="white")
+            draw.text((x_right, y_price), text_original_price, font=font_strikethrough, fill="red")
             
             # Linea barrata al centro del prezzo originale
             line_y = y_price + bbox_original[3] // 2
-            draw.line((x_right, line_y, x_right + bbox_original[2], line_y), fill="white", width=2)
+            draw.line((x_right, line_y, x_right + bbox_original[2], line_y), fill="white", width=1)
+
+            # Posiziona il prezzo scontato in grande sotto il prezzo barrato
+            # bbox_discount = draw.textbbox((0, 0), text_price, font=font_discount)
+            # draw.text((base_image.width - bbox_discount[2] - 10, y_price + bbox_original[3] + 5), text_price, font=font_discount, fill="white")
+
+            # bbox_discount = draw.textbbox((0, 0), sconto_percentuale, font=font_discount)
+            # draw.text((base_image.width - bbox_discount[2] - 10, y_price + bbox_original[3] + 5), sconto_percentuale, font=font_discount, fill="red")
 
             # Posiziona il prezzo scontato in grande sotto il prezzo barrato
             bbox_discount = draw.textbbox((0, 0), text_price, font=font_discount)
             draw.text((base_image.width - bbox_discount[2] - 10, y_price + bbox_original[3] + 5), text_price, font=font_discount, fill="white")
+
+            bbox_discount = draw.textbbox((0, 0), sconto_percentuale, font=font_discount)
+            #draw.text((base_image.width - bbox_discount[2] - 50 - bbox_discount[2], y_price + bbox_original[3] + 5), sconto_percentuale, font=font_discount, fill="red")
+            draw.text((10, y_price + bbox_original[3] + 5), sconto_percentuale, font=font_discount, fill="red")
+
         else:  # Caso senza sconto
             # Mostra solo il prezzo intero
             bbox = draw.textbbox((0, 0), text_price, font=font_large)
